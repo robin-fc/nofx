@@ -1369,10 +1369,14 @@ func (s *Server) handleLogin(c *gin.Context) {
 
 	// 检查OTP是否已验证
 	if !user.OTPVerified {
+		// 未完成OTP设置时，返回二维码URL与密钥，便于前端在登录页继续完成绑定
+		qrCodeURL := auth.GetOTPQRCodeURL(user.OTPSecret, user.Email)
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error":              "账户未完成OTP设置",
 			"user_id":            user.ID,
 			"requires_otp_setup": true,
+			"qr_code_url":        qrCodeURL,
+			"otp_secret":         user.OTPSecret,
 		})
 		return
 	}
