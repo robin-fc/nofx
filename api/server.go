@@ -259,16 +259,17 @@ type UpdateModelConfigRequest struct {
 }
 
 type UpdateExchangeConfigRequest struct {
-	Exchanges map[string]struct {
-		Enabled               bool   `json:"enabled"`
-		APIKey                string `json:"api_key"`
-		SecretKey             string `json:"secret_key"`
-		Testnet               bool   `json:"testnet"`
-		HyperliquidWalletAddr string `json:"hyperliquid_wallet_addr"`
-		AsterUser             string `json:"aster_user"`
-		AsterSigner           string `json:"aster_signer"`
-		AsterPrivateKey       string `json:"aster_private_key"`
-	} `json:"exchanges"`
+    Exchanges map[string]struct {
+        Enabled               bool   `json:"enabled"`
+        APIKey                string `json:"api_key"`
+        SecretKey             string `json:"secret_key"`
+        Testnet               bool   `json:"testnet"`
+        HyperliquidWalletAddr string `json:"hyperliquid_wallet_addr"`
+        AsterUser             string `json:"aster_user"`
+        AsterSigner           string `json:"aster_signer"`
+        AsterPrivateKey       string `json:"aster_private_key"`
+        OKXPassphrase         string `json:"okx_passphrase"`
+    } `json:"exchanges"`
 }
 
 // handleCreateTrader 创建新的AI交易员
@@ -709,14 +710,26 @@ func (s *Server) handleUpdateExchangeConfigs(c *gin.Context) {
 		return
 	}
 
-	// 更新每个交易所的配置
-	for exchangeID, exchangeData := range req.Exchanges {
-		err := s.database.UpdateExchange(userID, exchangeID, exchangeData.Enabled, exchangeData.APIKey, exchangeData.SecretKey, exchangeData.Testnet, exchangeData.HyperliquidWalletAddr, exchangeData.AsterUser, exchangeData.AsterSigner, exchangeData.AsterPrivateKey)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("更新交易所 %s 失败: %v", exchangeID, err)})
-			return
-		}
-	}
+    // 更新每个交易所的配置
+    for exchangeID, exchangeData := range req.Exchanges {
+        err := s.database.UpdateExchange(
+            userID,
+            exchangeID,
+            exchangeData.Enabled,
+            exchangeData.APIKey,
+            exchangeData.SecretKey,
+            exchangeData.Testnet,
+            exchangeData.HyperliquidWalletAddr,
+            exchangeData.AsterUser,
+            exchangeData.AsterSigner,
+            exchangeData.AsterPrivateKey,
+            exchangeData.OKXPassphrase,
+        )
+        if err != nil {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("更新交易所 %s 失败: %v", exchangeID, err)})
+            return
+        }
+    }
 
 	// 重新加载该用户的所有交易员，使新配置立即生效
 	err := s.traderManager.LoadUserTraders(s.database, userID)

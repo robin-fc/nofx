@@ -72,6 +72,8 @@ func (d *Database) createTables() error {
 			aster_user TEXT DEFAULT '',
 			aster_signer TEXT DEFAULT '',
 			aster_private_key TEXT DEFAULT '',
+			-- OKX 特定字段
+			okx_passphrase TEXT DEFAULT '',
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -188,6 +190,7 @@ func (d *Database) createTables() error {
 		`ALTER TABLE exchanges ADD COLUMN aster_user TEXT DEFAULT ''`,
 		`ALTER TABLE exchanges ADD COLUMN aster_signer TEXT DEFAULT ''`,
 		`ALTER TABLE exchanges ADD COLUMN aster_private_key TEXT DEFAULT ''`,
+		`ALTER TABLE exchanges ADD COLUMN okx_passphrase TEXT DEFAULT ''`,
 		`ALTER TABLE traders ADD COLUMN custom_prompt TEXT DEFAULT ''`,
 		`ALTER TABLE traders ADD COLUMN override_base_prompt BOOLEAN DEFAULT 0`,
 		`ALTER TABLE traders ADD COLUMN is_cross_margin BOOLEAN DEFAULT 1`,             // 默认为全仓模式
@@ -244,6 +247,7 @@ func (d *Database) initDefaultData() error {
 		{"binance", "Binance Futures", "binance"},
 		{"hyperliquid", "Hyperliquid", "hyperliquid"},
 		{"aster", "Aster DEX", "aster"},
+		{"okx", "OKX Futures", "okx"},
 	}
 
 	for _, exchange := range exchanges {
@@ -318,6 +322,7 @@ func (d *Database) migrateExchangesTable() error {
 			aster_user TEXT DEFAULT '',
 			aster_signer TEXT DEFAULT '',
 			aster_private_key TEXT DEFAULT '',
+			okx_passphrase TEXT DEFAULT '',
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			PRIMARY KEY (id, user_id),
@@ -393,22 +398,24 @@ type AIModelConfig struct {
 
 // ExchangeConfig 交易所配置
 type ExchangeConfig struct {
-	ID        string `json:"id"`
-	UserID    string `json:"user_id"`
-	Name      string `json:"name"`
-	Type      string `json:"type"`
-	Enabled   bool   `json:"enabled"`
-	APIKey    string `json:"apiKey"`
-	SecretKey string `json:"secretKey"`
-	Testnet   bool   `json:"testnet"`
-	// Hyperliquid 特定字段
-	HyperliquidWalletAddr string `json:"hyperliquidWalletAddr"`
-	// Aster 特定字段
-	AsterUser       string    `json:"asterUser"`
-	AsterSigner     string    `json:"asterSigner"`
-	AsterPrivateKey string    `json:"asterPrivateKey"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+    ID        string `json:"id"`
+    UserID    string `json:"user_id"`
+    Name      string `json:"name"`
+    Type      string `json:"type"`
+    Enabled   bool   `json:"enabled"`
+    APIKey    string `json:"apiKey"`
+    SecretKey string `json:"secretKey"`
+    Testnet   bool   `json:"testnet"`
+    // Hyperliquid 特定字段
+    HyperliquidWalletAddr string `json:"hyperliquidWalletAddr"`
+    // Aster 特定字段
+    AsterUser       string    `json:"asterUser"`
+    AsterSigner     string    `json:"asterSigner"`
+    AsterPrivateKey string    `json:"asterPrivateKey"`
+    // OKX 特定字段
+    OKXPassphrase string    `json:"okxPassphrase"`
+    CreatedAt       time.Time `json:"created_at"`
+    UpdatedAt       time.Time `json:"updated_at"`
 }
 
 // TraderRecord 交易员配置（数据库实体）
@@ -661,15 +668,16 @@ func (d *Database) UpdateAIModel(userID, id string, enabled bool, apiKey, custom
 
 // GetExchanges 获取用户的交易所配置
 func (d *Database) GetExchanges(userID string) ([]*ExchangeConfig, error) {
-	rows, err := d.db.Query(`
-		SELECT id, user_id, name, type, enabled, api_key, secret_key, testnet, 
-		       COALESCE(hyperliquid_wallet_addr, '') as hyperliquid_wallet_addr,
-		       COALESCE(aster_user, '') as aster_user,
-		       COALESCE(aster_signer, '') as aster_signer,
-		       COALESCE(aster_private_key, '') as aster_private_key,
-		       created_at, updated_at 
-		FROM exchanges WHERE user_id = ? ORDER BY id
-	`, userID)
+    rows, err := d.db.Query(`
+        SELECT id, user_id, name, type, enabled, api_key, secret_key, testnet, 
+               COALESCE(hyperliquid_wallet_addr, '') as hyperliquid_wallet_addr,
+               COALESCE(aster_user, '') as aster_user,
+               COALESCE(aster_signer, '') as aster_signer,
+               COALESCE(aster_private_key, '') as aster_private_key,
+               COALESCE(okx_passphrase, '') as okx_passphrase,
+               created_at, updated_at 
+        FROM exchanges WHERE user_id = ? ORDER BY id
+    `, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -679,13 +687,14 @@ func (d *Database) GetExchanges(userID string) ([]*ExchangeConfig, error) {
 	exchanges := make([]*ExchangeConfig, 0)
 	for rows.Next() {
 		var exchange ExchangeConfig
-		err := rows.Scan(
-			&exchange.ID, &exchange.UserID, &exchange.Name, &exchange.Type,
-			&exchange.Enabled, &exchange.APIKey, &exchange.SecretKey, &exchange.Testnet,
-			&exchange.HyperliquidWalletAddr, &exchange.AsterUser,
-			&exchange.AsterSigner, &exchange.AsterPrivateKey,
-			&exchange.CreatedAt, &exchange.UpdatedAt,
-		)
+        err := rows.Scan(
+            &exchange.ID, &exchange.UserID, &exchange.Name, &exchange.Type,
+            &exchange.Enabled, &exchange.APIKey, &exchange.SecretKey, &exchange.Testnet,
+            &exchange.HyperliquidWalletAddr, &exchange.AsterUser,
+            &exchange.AsterSigner, &exchange.AsterPrivateKey,
+            &exchange.OKXPassphrase,
+            &exchange.CreatedAt, &exchange.UpdatedAt,
+        )
 		if err != nil {
 			return nil, err
 		}
@@ -696,15 +705,15 @@ func (d *Database) GetExchanges(userID string) ([]*ExchangeConfig, error) {
 }
 
 // UpdateExchange 更新交易所配置，如果不存在则创建用户特定配置
-func (d *Database) UpdateExchange(userID, id string, enabled bool, apiKey, secretKey string, testnet bool, hyperliquidWalletAddr, asterUser, asterSigner, asterPrivateKey string) error {
-	log.Printf("🔧 UpdateExchange: userID=%s, id=%s, enabled=%v", userID, id, enabled)
+func (d *Database) UpdateExchange(userID, id string, enabled bool, apiKey, secretKey string, testnet bool, hyperliquidWalletAddr, asterUser, asterSigner, asterPrivateKey, okxPassphrase string) error {
+    log.Printf("🔧 UpdateExchange: userID=%s, id=%s, enabled=%v", userID, id, enabled)
 
 	// 首先尝试更新现有的用户配置
-	result, err := d.db.Exec(`
-		UPDATE exchanges SET enabled = ?, api_key = ?, secret_key = ?, testnet = ?, 
-		       hyperliquid_wallet_addr = ?, aster_user = ?, aster_signer = ?, aster_private_key = ?, updated_at = datetime('now')
-		WHERE id = ? AND user_id = ?
-	`, enabled, apiKey, secretKey, testnet, hyperliquidWalletAddr, asterUser, asterSigner, asterPrivateKey, id, userID)
+    result, err := d.db.Exec(`
+        UPDATE exchanges SET enabled = ?, api_key = ?, secret_key = ?, testnet = ?, 
+               hyperliquid_wallet_addr = ?, aster_user = ?, aster_signer = ?, aster_private_key = ?, okx_passphrase = ?, updated_at = datetime('now')
+        WHERE id = ? AND user_id = ?
+    `, enabled, apiKey, secretKey, testnet, hyperliquidWalletAddr, asterUser, asterSigner, asterPrivateKey, okxPassphrase, id, userID)
 	if err != nil {
 		log.Printf("❌ UpdateExchange: 更新失败: %v", err)
 		return err
@@ -725,28 +734,31 @@ func (d *Database) UpdateExchange(userID, id string, enabled bool, apiKey, secre
 
 		// 根据交易所ID确定基本信息
 		var name, typ string
-		if id == "binance" {
-			name = "Binance Futures"
-			typ = "cex"
-		} else if id == "hyperliquid" {
-			name = "Hyperliquid"
-			typ = "dex"
-		} else if id == "aster" {
-			name = "Aster DEX"
-			typ = "dex"
-		} else {
-			name = id + " Exchange"
-			typ = "cex"
-		}
+        if id == "binance" {
+            name = "Binance Futures"
+            typ = "cex"
+        } else if id == "hyperliquid" {
+            name = "Hyperliquid"
+            typ = "dex"
+        } else if id == "aster" {
+            name = "Aster DEX"
+            typ = "dex"
+        } else if id == "okx" {
+            name = "OKX Futures"
+            typ = "cex"
+        } else {
+            name = id + " Exchange"
+            typ = "cex"
+        }
 
 		log.Printf("🆕 UpdateExchange: 创建新记录 ID=%s, name=%s, type=%s", id, name, typ)
 
 		// 创建用户特定的配置，使用原始的交易所ID
-		_, err = d.db.Exec(`
-			INSERT INTO exchanges (id, user_id, name, type, enabled, api_key, secret_key, testnet, 
-			                       hyperliquid_wallet_addr, aster_user, aster_signer, aster_private_key, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-		`, id, userID, name, typ, enabled, apiKey, secretKey, testnet, hyperliquidWalletAddr, asterUser, asterSigner, asterPrivateKey)
+        _, err = d.db.Exec(`
+            INSERT INTO exchanges (id, user_id, name, type, enabled, api_key, secret_key, testnet, 
+                                   hyperliquid_wallet_addr, aster_user, aster_signer, aster_private_key, okx_passphrase, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+        `, id, userID, name, typ, enabled, apiKey, secretKey, testnet, hyperliquidWalletAddr, asterUser, asterSigner, asterPrivateKey, okxPassphrase)
 
 		if err != nil {
 			log.Printf("❌ UpdateExchange: 创建记录失败: %v", err)
@@ -770,12 +782,12 @@ func (d *Database) CreateAIModel(userID, id, name, provider string, enabled bool
 }
 
 // CreateExchange 创建交易所配置
-func (d *Database) CreateExchange(userID, id, name, typ string, enabled bool, apiKey, secretKey string, testnet bool, hyperliquidWalletAddr, asterUser, asterSigner, asterPrivateKey string) error {
-	_, err := d.db.Exec(`
-		INSERT OR IGNORE INTO exchanges (id, user_id, name, type, enabled, api_key, secret_key, testnet, hyperliquid_wallet_addr, aster_user, aster_signer, aster_private_key) 
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, id, userID, name, typ, enabled, apiKey, secretKey, testnet, hyperliquidWalletAddr, asterUser, asterSigner, asterPrivateKey)
-	return err
+func (d *Database) CreateExchange(userID, id, name, typ string, enabled bool, apiKey, secretKey string, testnet bool, hyperliquidWalletAddr, asterUser, asterSigner, asterPrivateKey, okxPassphrase string) error {
+    _, err := d.db.Exec(`
+        INSERT OR IGNORE INTO exchanges (id, user_id, name, type, enabled, api_key, secret_key, testnet, hyperliquid_wallet_addr, aster_user, aster_signer, aster_private_key, okx_passphrase) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, id, userID, name, typ, enabled, apiKey, secretKey, testnet, hyperliquidWalletAddr, asterUser, asterSigner, asterPrivateKey, okxPassphrase)
+    return err
 }
 
 // CreateTrader 创建交易员
@@ -882,12 +894,13 @@ func (d *Database) GetTraderConfig(userID, traderID string) (*TraderRecord, *AIM
 			COALESCE(a.custom_api_url, '') as custom_api_url,
 			COALESCE(a.custom_model_name, '') as custom_model_name,
 			a.created_at, a.updated_at,
-			e.id, e.user_id, e.name, e.type, e.enabled, e.api_key, e.secret_key, e.testnet,
-			COALESCE(e.hyperliquid_wallet_addr, '') as hyperliquid_wallet_addr,
-			COALESCE(e.aster_user, '') as aster_user,
-			COALESCE(e.aster_signer, '') as aster_signer,
-			COALESCE(e.aster_private_key, '') as aster_private_key,
-			e.created_at, e.updated_at
+            e.id, e.user_id, e.name, e.type, e.enabled, e.api_key, e.secret_key, e.testnet,
+            COALESCE(e.hyperliquid_wallet_addr, '') as hyperliquid_wallet_addr,
+            COALESCE(e.aster_user, '') as aster_user,
+            COALESCE(e.aster_signer, '') as aster_signer,
+            COALESCE(e.aster_private_key, '') as aster_private_key,
+            COALESCE(e.okx_passphrase, '') as okx_passphrase,
+            e.created_at, e.updated_at
 		FROM traders t
 		JOIN ai_models a ON t.ai_model_id = a.id AND t.user_id = a.user_id
 		JOIN exchanges e ON t.exchange_id = e.id AND t.user_id = e.user_id
@@ -904,10 +917,11 @@ func (d *Database) GetTraderConfig(userID, traderID string) (*TraderRecord, *AIM
 		&aiModel.CustomAPIURL, &aiModel.CustomModelName,
 		&aiModel.CreatedAt, &aiModel.UpdatedAt,
 		&exchange.ID, &exchange.UserID, &exchange.Name, &exchange.Type, &exchange.Enabled,
-		&exchange.APIKey, &exchange.SecretKey, &exchange.Testnet,
-		&exchange.HyperliquidWalletAddr, &exchange.AsterUser, &exchange.AsterSigner, &exchange.AsterPrivateKey,
-		&exchange.CreatedAt, &exchange.UpdatedAt,
-	)
+        &exchange.APIKey, &exchange.SecretKey, &exchange.Testnet,
+        &exchange.HyperliquidWalletAddr, &exchange.AsterUser, &exchange.AsterSigner, &exchange.AsterPrivateKey,
+        &exchange.OKXPassphrase,
+        &exchange.CreatedAt, &exchange.UpdatedAt,
+    )
 
 	if err != nil {
 		return nil, nil, nil, err

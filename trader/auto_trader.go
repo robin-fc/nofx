@@ -21,7 +21,7 @@ type AutoTraderConfig struct {
 	AIModel string // AI模型: "qwen" 或 "deepseek"
 
 	// 交易平台选择
-	Exchange string // "binance", "hyperliquid" 或 "aster"
+	Exchange string // "binance", "hyperliquid"、"aster" 或 "okx"
 
 	// 币安API配置
 	BinanceAPIKey    string
@@ -36,6 +36,12 @@ type AutoTraderConfig struct {
 	AsterUser       string // Aster主钱包地址
 	AsterSigner     string // Aster API钱包地址
 	AsterPrivateKey string // Aster API钱包私钥
+
+	// OKX配置
+	OKXAPIKey     string // OKX API Key
+	OKXSecretKey  string // OKX Secret Key
+	OKXPassphrase string // OKX 口令
+	OKXTestnet    bool   // 是否使用 OKX 模拟盘
 
 	CoinPoolAPIURL string
 
@@ -178,6 +184,13 @@ func NewAutoTrader(config AutoTraderConfig) (*AutoTrader, error) {
 		trader, err = NewAsterTrader(config.AsterUser, config.AsterSigner, config.AsterPrivateKey)
 		if err != nil {
 			return nil, fmt.Errorf("初始化Aster交易器失败: %w", err)
+		}
+	case "okx":
+		// OKX 占位实现接入
+		log.Printf("🏦 [%s] 使用OKX交易 (占位实现)", config.Name)
+		trader, err = NewOKXTrader(config.OKXAPIKey, config.OKXSecretKey, config.OKXPassphrase, config.OKXTestnet)
+		if err != nil {
+			return nil, fmt.Errorf("初始化OKX交易器失败: %w", err)
 		}
 	default:
 		return nil, fmt.Errorf("不支持的交易平台: %s", config.Exchange)

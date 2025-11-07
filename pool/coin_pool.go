@@ -22,6 +22,8 @@ var defaultMainstreamCoins = []string{
 	"DOGEUSDT",
 	"ADAUSDT",
 	"HYPEUSDT",
+	"ZECUSDT",
+	"COAIUSDT",
 }
 
 // CoinPoolConfig 币种池配置
