@@ -1677,7 +1677,8 @@ function ExchangeConfigModal({
             <>
               {/* Binance 和其他 CEX 交易所的字段 */}
               {(selectedExchange.id === 'binance' ||
-                selectedExchange.type === 'cex') &&
+                selectedExchange.type === 'cex' ||
+                selectedExchange.id === 'okx') &&
                 selectedExchange.id !== 'hyperliquid' &&
                 selectedExchange.id !== 'aster' && (
                   <>
